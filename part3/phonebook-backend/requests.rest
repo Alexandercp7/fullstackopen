@@ -1,0 +1,33 @@
+GET http://127.0.0.1:3001/api/persons
+
+###
+
+GET http://127.0.0.1:3001/api/persons/replace-with-person-id
+
+###
+
+GET http://127.0.0.1:3001/info
+
+###
+
+DELETE http://127.0.0.1:3001/api/persons/replace-with-person-id
+
+###
+
+POST http://127.0.0.1:3001/api/persons
+Content-Type: application/json
+
+{
+  "name": "Grace Hopper",
+  "number": "123-456789"
+}
+
+###
+
+PUT http://127.0.0.1:3001/api/persons/replace-with-person-id
+Content-Type: application/json
+
+{
+  "name": "Grace Hopper",
+  "number": "987-654321"
+}
