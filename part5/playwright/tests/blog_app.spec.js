@@ -1,0 +1,192 @@
+﻿const { test, expect, beforeEach, describe } = require("@playwright/test");
+const {
+  iniciarSesion,
+  crearBlog,
+  darLike,
+  eliminarBlog,
+} = require("./utilidades_pruebas");
+
+describe("Blog app", () => {
+  beforeEach(async ({ page, request }) => {
+    // Para vaciar la BD.
+    await request.post("/api/testing/reset");
+
+    // Se crea el usuario.
+    await request.post("/api/users", {
+      data: {
+        username: "Alex",
+        name: "Alex",
+        password: "contrafacil",
+      },
+    });
+
+    await request.post("/api/users", {
+      data: {
+        username: "OtroUsuario",
+        name: "Usuario Dos",
+        password: "awsd",
+      },
+    });
+
+    // Entrar a la app.
+    await page.goto("/");
+  });
+
+  test("se muestra el formulario de inicio de sesión por defecto", async ({
+    page,
+  }) => {
+    await expect(
+      page.getByText("Inicie sesión en la aplicación")
+    ).toBeVisible();
+
+    await expect(page.getByLabel("Nombre de usuario")).toBeVisible();
+    await expect(page.getByLabel("Contraseña")).toBeVisible();
+
+    await expect(page.getByRole("button", { name: "Ingresá" })).toBeVisible();
+  });
+
+  test("inicio de sesión exitoso", async ({ page }) => {
+    await iniciarSesion(page, "Alex", "contrafacil");
+    await expect(page.getByText("Alex inició sesión")).toBeVisible();
+  });
+
+  test("inicio de sesión no exitoso", async ({ page }) => {
+    await iniciarSesion(page, "Alex", "cewwc");
+
+    // Se selecciona la notificación de error.
+    const mensajeDeError = page.locator(".error");
+
+    await expect(mensajeDeError).toHaveText(
+      "Nombre de usuario y/o contraseña incorrectos"
+    );
+    await expect(mensajeDeError).toHaveCSS("border-style", "solid");
+    await expect(mensajeDeError).toHaveCSS("color", "rgb(255, 0, 0)");
+
+    // Confirma que no se muestra el mensaje de inicio de sesión (el "not" niega la condición "toBeVisible").
+    await expect(page.getByText("Alex inició sesión")).not.toBeVisible();
+  });
+
+  describe("al iniciar sesión", () => {
+    beforeEach(async ({ page }) => {
+      await iniciarSesion(page, "Alex", "contrafacil");
+
+      await crearBlog(
+        page,
+        "Blog de prueba E2E con Playwright",
+        "Alex",
+        "https://fullstackopen.com/es/part5/pruebas_de_extremo_a_extremo_playwright#ejercicios-5-17-5-23"
+      );
+    });
+
+    test("se puede crear un nuevo blog", async ({ page }) => {
+      const mensajeDeExito = page.locator(".exito");
+      await expect(mensajeDeExito).toHaveText(
+        "Nuevo blog añadido: Blog de prueba E2E con Playwright, por Alex"
+      );
+      await expect(mensajeDeExito).toHaveCSS("border-style", "solid");
+      await expect(mensajeDeExito).toHaveCSS("color", "rgb(53, 156, 40)");
+
+      await expect(
+        page.getByText(
+          "Nuevo blog añadido: Blog de prueba E2E con Playwright, por Alex"
+        )
+      ).toBeVisible();
+    });
+
+    test("se puede dar like a un blog", async ({ page }) => {
+      const tituloBlog = "Blog de prueba E2E con Playwright";
+
+      await darLike(page, tituloBlog);
+
+      // Se ubica el blog.
+      const blogContainer = page.locator(".blog", {
+        hasText: tituloBlog,
+      });
+
+      // Se verifica que el contador de likes haya pasado a 1.
+      await expect(blogContainer.getByTestId("contador-likes")).toHaveText("1");
+    });
+
+    test("el usuario que creó un blog puede eliminarlo", async ({ page }) => {
+      /* Forzar la recarga de la página para obtener datos de usuario completos del blog del backend y renderizar el botón "Eliminar". */
+      await page.reload();
+
+      const tituloBlog = "Blog de prueba E2E con Playwright";
+
+      await eliminarBlog(page, tituloBlog);
+
+      await expect(page.getByText(tituloBlog)).not.toBeVisible();
+    });
+    test("solo el creador del blog ve el botón eliminar", async ({ page }) => {
+      const tituloBlog = "Blog de prueba E2E con Playwright";
+
+      await page.reload();
+
+      // Usuario creador (ya logueado por el beforeEach).
+      const blogContainer = page
+        .getByTestId("blog-item")
+        .filter({ hasText: tituloBlog });
+      await blogContainer.getByRole("button", { name: "Mostrar" }).click();
+
+      await expect(
+        blogContainer.getByRole("button", { name: "Eliminar" })
+      ).toBeVisible();
+
+      await page.getByRole("button", { name: "Salir" }).click();
+
+      // Se inicia sesión con otro usuario que no creó el blog.
+      await iniciarSesion(page, "OtroUsuario", "awsd");
+
+      const blogContainerOtro = page
+        .getByTestId("blog-item")
+        .filter({ hasText: tituloBlog });
+      await blogContainerOtro.getByRole("button", { name: "Mostrar" }).click();
+
+      // El usuario NO creador del blog NO debe ver el botón Eliminar.
+      await expect(
+        blogContainerOtro.getByRole("button", { name: "Eliminar" })
+      ).not.toBeVisible();
+    });
+
+    test("los blogs están ordenados por cantidad de likes (mayor a menor)", async ({
+      page,
+    }) => {
+      const blogA = "Blog A";
+      const blogB = "Blog B";
+      const blogC = "Blog C";
+
+      await crearBlog(page, "Blog A", "Alex", "http://a.com");
+      await crearBlog(page, "Blog B", "Alex", "http://b.com");
+      await crearBlog(page, "Blog C", "Alex", "http://c.com");
+
+      await darLike(page, blogB);
+      await darLike(page, blogB);
+      await darLike(page, blogB);
+      await darLike(page, blogB);
+      await darLike(page, blogB);
+
+      await darLike(page, blogC);
+      await darLike(page, blogC);
+      await darLike(page, blogC);
+      await darLike(page, blogC);
+
+      await darLike(page, blogA);
+      await darLike(page, blogA);
+      await darLike(page, blogA);
+
+      // Obtención de todos los contenedores de blogs renderizados en pantalla. 
+      const blogsOrdenados = await page
+        .locator('[data-testid="blog-item"]')
+        .evaluateAll((elementos) =>
+          // "innerText" devuelve TODO el texto visible dentro del blog, osea, el título, autor, likes, etc, como si los vería el usuario.
+          elementos.map((elemento) => elemento.innerText)
+        );
+
+      // Verificación:
+      // La lista resultante debe estar en orden: B -> C -> A.
+      expect(blogsOrdenados[0]).toMatch(blogB);
+      expect(blogsOrdenados[1]).toMatch(blogC);
+      expect(blogsOrdenados[2]).toMatch(blogA);
+    });
+  });
+});
